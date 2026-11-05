@@ -1,0 +1,5 @@
+Filter = {
+    Executables = ( "locationd" );
+    Bundles = ( "com.apple.Maps" );
+};
+

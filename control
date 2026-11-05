@@ -1,0 +1,9 @@
+Package: com.noname122021.legacygpsfix
+Name: LegacyGPSFix
+Version: 1.1.0
+Architecture: iphoneos-arm
+Description: Restores GPS positioning and ephemeris compatibility on legacy iOS devices
+Maintainer: noname122021
+Author: noname122021
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader

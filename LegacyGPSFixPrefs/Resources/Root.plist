@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Status</string>
+			<key>footerText</key>
+			<string>Restores GPS positioning and ephemeris compatibility on legacy iOS devices.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>Rollover Fix</string>
+			<key>get</key>
+			<string>getRolloverStatus:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>A-GPS Ephemeris</string>
+			<key>get</key>
+			<string>getPositionFilterStatus:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>Cache Age</string>
+			<key>get</key>
+			<string>getEphemerisCacheAge:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Fake GPS (Static Override)</string>
+			<key>footerText</key>
+			<string>When enabled, forces the device to report this exact coordinate to all location clients.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>fake_gps_enabled</string>
+			<key>label</key>
+			<string>Fake GPS (Static Override)</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>detail</key>
+			<string>PSDetailController</string>
+			<key>default</key>
+			<string>37.33182</string>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>fake_lat</string>
+			<key>label</key>
+			<string>Latitude</string>
+			<key>placeholder</key>
+			<string>37.33182</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>detail</key>
+			<string>PSDetailController</string>
+			<key>default</key>
+			<string>-122.03118</string>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>fake_lon</string>
+			<key>label</key>
+			<string>Longitude</string>
+			<key>placeholder</key>
+			<string>-122.03118</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Navigation Filter Pipeline</string>
+			<key>footerText</key>
+			<string>Filters for desktop drift suppression, teleport/speed spike rejection, and trajectory smoothing.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>staticNavEnabled</string>
+			<key>label</key>
+			<string>Static Navigation (Freeze Drift)</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>velocityClampEnabled</string>
+			<key>label</key>
+			<string>Velocity Clamp (Reject Spikes)</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>default</key>
+			<integer>120</integer>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>key</key>
+			<string>maxSpeedKmh</string>
+			<key>label</key>
+			<string>Max Speed (km/h)</string>
+			<key>validTitles</key>
+			<array>
+				<string>60 km/h (City)</string>
+				<string>120 km/h (Highway)</string>
+				<string>180 km/h (Express)</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<integer>60</integer>
+				<integer>120</integer>
+				<integer>180</integer>
+			</array>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>smoothingEnabled</string>
+			<key>label</key>
+			<string>Trajectory Smoothing</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Privacy &amp; Location</string>
+			<key>footerText</key>
+			<string>When disabled, prevents Wi-Fi beacon uploads to Apple. Positioning relies strictly on autonomous satellite GPS.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>online_wloc_enabled</string>
+			<key>label</key>
+			<string>Online Network Location (WLOC)</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Position Offset Calibration</string>
+			<key>footerText</key>
+			<string>Manually calibrate local base station or indoor offset in meters.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>detail</key>
+			<string>PSDetailController</string>
+			<key>default</key>
+			<string>0</string>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>offsetEastMeters</string>
+			<key>label</key>
+			<string>East/West Offset (m)</string>
+			<key>placeholder</key>
+			<string>+250 or -250</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>detail</key>
+			<string>PSDetailController</string>
+			<key>default</key>
+			<string>0</string>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>offsetNorthMeters</string>
+			<key>label</key>
+			<string>North/South Offset (m)</string>
+			<key>placeholder</key>
+			<string>+50 or -50</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Ephemeris Mirror</string>
+			<key>footerText</key>
+			<string>Carrier validation and ephemeris download mirror configuration.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>detail</key>
+			<string>PSDetailController</string>
+			<key>default</key>
+			<string></string>
+			<key>defaults</key>
+			<string>com.noname122021.legacygpsfix</string>
+			<key>key</key>
+			<string>customMirrorUrl</string>
+			<key>label</key>
+			<string>Custom Mirror URL</string>
+			<key>placeholder</key>
+			<string>http://example.com/xtra2.bin</string>
+			<key>PostNotification</key>
+			<string>com.noname122021.legacygpsfix.prefschanged</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Update Ephemeris Now</string>
+			<key>action</key>
+			<string>updateEphemerisNow:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>LegacyGPSFix v1.1.0</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>LegacyGPSFix</string>
+</dict>
+</plist>
