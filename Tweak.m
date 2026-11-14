@@ -1,6 +1,7 @@
 #include <substrate.h>
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
+#include <dlfcn.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CFNetwork/CFNetwork.h>
 #include <Security/SecTrust.h>
@@ -248,7 +249,7 @@ static OSStatus hooked_SecTrustEvaluate(SecTrustRef t, SecTrustResultType *r) {
 }
 
 static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
-    if (!coord || !CLLocationCoordinate2DIsValid(*coord)) return;
+    if (!coord) return;
     pthread_mutex_lock(&s_lock);
     if (s_fake_gps_enabled) {
         coord->latitude = s_fake_lat;
@@ -256,6 +257,8 @@ static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
         pthread_mutex_unlock(&s_lock);
         return;
     }
+    pthread_mutex_unlock(&s_lock);
+    if (!CLLocationCoordinate2DIsValid(*coord)) return;
     if (fabs(s_off_east) >= 0.001 || fabs(s_off_north) >= 0.001) {
         double r = coord->latitude * (M_PI / 180.0);
         double m_lat = 111132.95 - 559.82 * cos(2.0 * r);
@@ -317,10 +320,32 @@ static CLLocationCoordinate2D hooked_coord(id self, SEL _cmd) {
     return c;
 }
 
-static id (*orig_initFull)(id, SEL, CLLocationCoordinate2D, CLLocationDistance, CLLocationAccuracy, CLLocationAccuracy, CLLocationDirection, CLLocationSpeed, id);
-static id hooked_initFull(id self, SEL _cmd, CLLocationCoordinate2D c, CLLocationDistance alt, CLLocationAccuracy ha, CLLocationAccuracy va, CLLocationDirection crs, CLLocationSpeed spd, id ts) {
-    apply_nav_pipeline(&c, [ts isKindOfClass:[NSDate class]] ? [(NSDate *)ts timeIntervalSince1970] : 0.0);
-    return orig_initFull(self, _cmd, c, alt, ha, va, crs, spd, ts);
+static CLLocationAccuracy (*orig_hacc)(id, SEL);
+static CLLocationAccuracy hooked_hacc(id self, SEL _cmd) {
+    pthread_mutex_lock(&s_lock);
+    bool fake = s_fake_gps_enabled;
+    pthread_mutex_unlock(&s_lock);
+    if (fake) return 5.0;
+    return orig_hacc ? orig_hacc(self, _cmd) : -1.0;
+}
+
+static id (*orig_pl_location)(id, SEL);
+static id hooked_pl_location(id self, SEL _cmd) {
+    pthread_mutex_lock(&s_lock);
+    bool fake = s_fake_gps_enabled;
+    double lat = s_fake_lat;
+    double lon = s_fake_lon;
+    pthread_mutex_unlock(&s_lock);
+    if (fake) {
+        return [[CLLocation alloc] initWithCoordinate:CLLocationCoordinate2DMake(lat, lon)
+                                             altitude:10.0
+                                   horizontalAccuracy:5.0
+                                     verticalAccuracy:5.0
+                                               course:0.0
+                                                speed:0.0
+                                            timestamp:[NSDate date]];
+    }
+    return orig_pl_location ? orig_pl_location(self, _cmd) : nil;
 }
 
 static id (*orig_initCoord)(id, SEL, CLLocationDegrees, CLLocationDegrees);
@@ -353,7 +378,18 @@ __attribute__((constructor)) static void init(void) {
     Class cls = objc_getClass("CLLocation");
     if (cls) {
         MSHookMessageEx(cls, @selector(coordinate), (IMP)hooked_coord, (IMP *)&orig_coord);
-        MSHookMessageEx(cls, @selector(initWithCoordinate:altitude:horizontalAccuracy:verticalAccuracy:course:speed:timestamp:), (IMP)hooked_initFull, (IMP *)&orig_initFull);
+        MSHookMessageEx(cls, @selector(horizontalAccuracy), (IMP)hooked_hacc, (IMP *)&orig_hacc);
         MSHookMessageEx(cls, @selector(initWithLatitude:longitude:), (IMP)hooked_initCoord, (IMP *)&orig_initCoord);
+    }
+
+    if (!p || strcmp(p, "locationd") != 0) {
+        Class plCls = objc_getClass("PLLocationController");
+        if (!plCls) {
+            dlopen("/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/PhotoLibraryServices", RTLD_LAZY);
+            plCls = objc_getClass("PLLocationController");
+        }
+        if (plCls) {
+            MSHookMessageEx(plCls, @selector(location), (IMP)hooked_pl_location, (IMP *)&orig_pl_location);
+        }
     }
 }

@@ -1,5 +1,5 @@
 Filter = {
     Executables = ( "locationd" );
-    Bundles = ( "com.apple.Maps" );
+    Bundles = ( "com.apple.UIKit", "com.apple.camera", "com.apple.Maps" );
 };
 
