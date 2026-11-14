@@ -1,5 +1,6 @@
 #include <substrate.h>
 #include <mach-o/dyld.h>
+#include <mach-o/getsect.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CFNetwork/CFNetwork.h>
 #include <Security/SecTrust.h>
@@ -9,6 +10,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/sysctl.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <math.h>
@@ -150,6 +152,138 @@ static double hooked_gpsTimeToEpoch(uint32_t week, uint32_t tow_ms) {
     return t;
 }
 
+struct DeviceBuildOffset {
+    const char *machine;
+    const char *build;
+    uintptr_t offset;
+};
+
+static const struct DeviceBuildOffset kDeviceBuildOffsets[] = {
+    /* iPad mini 1st gen */
+    { "iPad2,5", "10B146", 0x43130 }, { "iPad2,5", "10B147", 0x43130 },
+    { "iPad2,6", "10B146", 0x43130 }, { "iPad2,6", "10B147", 0x43130 },
+    { "iPad2,7", "10B146", 0x43130 }, { "iPad2,7", "10B147", 0x43130 },
+    { "iPad2,5", "10B329", 0x43130 }, { "iPad2,6", "10B329", 0x43130 }, { "iPad2,7", "10B329", 0x43130 },
+
+    /* iPhone 4S */
+    { "iPhone4,1", "10B146", 0x43130 }, { "iPhone4,1", "10B147", 0x43130 },
+    { "iPhone4,1", "10B329", 0x43130 }, { "iPhone4,1", "9B206",  0x3e280 },
+    { "iPhone4,1", "11D257", 0x48a10 }, { "iPhone4,1", "12H321", 0x4b120 },
+
+    /* iPhone 4 */
+    { "iPhone3,1", "10B146", 0x43130 }, { "iPhone3,1", "10B329", 0x43130 }, { "iPhone3,1", "11D257", 0x48a10 },
+    { "iPhone3,2", "10B146", 0x43130 }, { "iPhone3,2", "10B329", 0x43130 }, { "iPhone3,2", "11D257", 0x48a10 },
+    { "iPhone3,3", "10B146", 0x43130 }, { "iPhone3,3", "10B329", 0x43130 }, { "iPhone3,3", "11D257", 0x48a10 },
+    { "iPhone3,1", "9B206",  0x3e280 }, { "iPhone3,3", "9B206",  0x3e280 },
+
+    /* iPhone 3GS */
+    { "iPhone2,1", "10B500", 0x43130 }, { "iPhone2,1", "10B329", 0x43130 }, { "iPhone2,1", "9B206",  0x3e280 },
+
+    /* iPhone 5 */
+    { "iPhone5,1", "10B143", 0x42c38 }, { "iPhone5,1", "10B329", 0x42c38 }, { "iPhone5,1", "10B350", 0x42c38 },
+    { "iPhone5,2", "10B143", 0x42c38 }, { "iPhone5,2", "10B329", 0x42c38 }, { "iPhone5,2", "10B350", 0x42c38 },
+    { "iPhone5,1", "11D257", 0x49340 }, { "iPhone5,2", "11D257", 0x49340 },
+    { "iPhone5,1", "12H321", 0x4bd80 }, { "iPhone5,2", "12H321", 0x4bd80 },
+
+    /* iPhone 5c */
+    { "iPhone5,3", "11D257", 0x49340 }, { "iPhone5,4", "11D257", 0x49340 },
+    { "iPhone5,3", "12H321", 0x4bd80 }, { "iPhone5,4", "12H321", 0x4bd80 },
+
+    /* iPhone 5s */
+    { "iPhone6,1", "11D257", 0x51040 }, { "iPhone6,2", "11D257", 0x51040 },
+    { "iPhone6,1", "12H321", 0x54620 }, { "iPhone6,2", "12H321", 0x54620 },
+
+    /* iPad 1 */
+    { "iPad1,1", "9B206", 0x3e280 },
+
+    /* iPad 2 */
+    { "iPad2,1", "9B206", 0x3e280 }, { "iPad2,2", "9B206", 0x3e280 }, { "iPad2,3", "9B206", 0x3e280 },
+    { "iPad2,1", "10B146", 0x43130 }, { "iPad2,2", "10B146", 0x43130 }, { "iPad2,3", "10B146", 0x43130 },
+    { "iPad2,1", "10B329", 0x43130 }, { "iPad2,2", "10B329", 0x43130 }, { "iPad2,3", "10B329", 0x43130 },
+    { "iPad2,1", "11D257", 0x48a10 }, { "iPad2,2", "11D257", 0x48a10 }, { "iPad2,3", "11D257", 0x48a10 },
+    { "iPad2,1", "12H321", 0x4b120 }, { "iPad2,2", "12H321", 0x4b120 }, { "iPad2,3", "12H321", 0x4b120 },
+
+    /* iPad 3 */
+    { "iPad3,1", "9B206", 0x3e280 }, { "iPad3,2", "9B206", 0x3e280 }, { "iPad3,3", "9B206", 0x3e280 },
+    { "iPad3,1", "10B146", 0x43130 }, { "iPad3,2", "10B146", 0x43130 }, { "iPad3,3", "10B146", 0x43130 },
+    { "iPad3,1", "10B329", 0x43130 }, { "iPad3,2", "10B329", 0x43130 }, { "iPad3,3", "10B329", 0x43130 },
+    { "iPad3,1", "11D257", 0x48a10 }, { "iPad3,2", "11D257", 0x48a10 }, { "iPad3,3", "11D257", 0x48a10 },
+    { "iPad3,1", "12H321", 0x4b120 }, { "iPad3,2", "12H321", 0x4b120 }, { "iPad3,3", "12H321", 0x4b120 },
+
+    /* iPad 4 */
+    { "iPad3,4", "10B146", 0x42c38 }, { "iPad3,5", "10B146", 0x42c38 }, { "iPad3,6", "10B146", 0x42c38 },
+    { "iPad3,4", "10B329", 0x42c38 }, { "iPad3,5", "10B329", 0x42c38 }, { "iPad3,6", "10B329", 0x42c38 },
+    { "iPad3,4", "11D257", 0x49340 }, { "iPad3,5", "11D257", 0x49340 }, { "iPad3,6", "11D257", 0x49340 },
+    { "iPad3,4", "12H321", 0x4bd80 }, { "iPad3,5", "12H321", 0x4bd80 }, { "iPad3,6", "12H321", 0x4bd80 },
+
+    /* iPod touch 3, 4, 5 */
+    { "iPod3,1", "9B206",  0x3e280 },
+    { "iPod4,1", "9B206",  0x3e280 }, { "iPod4,1", "10B500", 0x43130 },
+    { "iPod5,1", "10B146", 0x43130 }, { "iPod5,1", "10B329", 0x43130 },
+    { "iPod5,1", "11D257", 0x48a10 }, { "iPod5,1", "12H321", 0x4b120 },
+};
+
+static uintptr_t resolve_gpsTimeToEpoch_offset(void) {
+    char build[32] = {0};
+    char machine[32] = {0};
+    size_t sz = sizeof(build);
+    sysctlbyname("kern.osversion", build, &sz, NULL, 0);
+    sz = sizeof(machine);
+    sysctlbyname("hw.machine", machine, &sz, NULL, 0);
+
+    /* 1. Fast static matrix lookup */
+    if (machine[0] && build[0]) {
+        for (size_t i = 0; i < sizeof(kDeviceBuildOffsets) / sizeof(kDeviceBuildOffsets[0]); ++i) {
+            if (strcmp(kDeviceBuildOffsets[i].machine, machine) == 0 &&
+                strcmp(kDeviceBuildOffsets[i].build, build) == 0) {
+                return kDeviceBuildOffsets[i].offset;
+            }
+        }
+    }
+
+    /* 2. Fallback: Bounded __TEXT,__text pattern scan matching 604800.0 */
+    const struct mach_header *mh = _dyld_get_image_header(0);
+    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    if (mh) {
+        unsigned long size = 0;
+        uint8_t *text = getsectiondata((const struct mach_header *)mh, "__TEXT", "__text", &size);
+        if (text && size > 32) {
+            /* ARM/Thumb: 604800 (0x93a80) via movw r1, #0x3a80 (43 f6 80 21) & movt r1, #9 (c0 f2 09 01) */
+            for (unsigned long i = 0; i + 32 < size; i += 2) {
+                if (text[i] == 0x43 && text[i+1] == 0xf6 && text[i+2] == 0x80 && text[i+3] == 0x21) {
+                    for (int off = 4; off <= 16; off += 2) {
+                        if (text[i+off] == 0xc0 && text[i+off+1] == 0xf2 && text[i+off+2] == 0x09 && text[i+off+3] == 0x01) {
+                            for (int back = 0; back <= 32; back += 2) {
+                                if ((long)i - back >= 0) {
+                                    uint8_t *fn = &text[i - back];
+                                    if (fn[0] == 0x41 && fn[1] == 0xec && fn[2] == 0x10 && fn[3] == 0x1b) {
+                                        return (uintptr_t)fn - slide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            /* ARM64: 604800.0 IEEE-754 double or mov w1, #0x3a80; movk w1, #0x9, lsl #16 */
+            const uint8_t dbl_pattern[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x22, 0x41 };
+            for (unsigned long i = 0; i + 8 <= size; i += 4) {
+                if (memcmp(&text[i], dbl_pattern, 8) == 0) {
+                    for (int back = 4; back <= 64; back += 4) {
+                        if ((long)i - back >= 0) {
+                            uint32_t insn = *(uint32_t *)(&text[i - back]);
+                            if ((insn & 0xffc003ff) == 0xd10003ff || (insn & 0xff000000) == 0xa9000000) {
+                                return (uintptr_t)&text[i - back] - slide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 static CFURLRef (*orig_CFURLCreateWithBytes)(CFAllocatorRef, const UInt8 *, CFIndex, CFStringEncoding, CFURLRef);
 static CFURLRef hooked_CFURLCreateWithBytes(CFAllocatorRef a, const UInt8 *b, CFIndex l, CFStringEncoding e, CFURLRef base) {
     if (b && l > 0 && memmem(b, l, "iphone-ld.apple.com", 19)) {
@@ -259,7 +393,12 @@ __attribute__((constructor)) static void init(void) {
 
         MSHookFunction((void *)CFURLCreateWithBytes, (void *)hooked_CFURLCreateWithBytes, (void **)&orig_CFURLCreateWithBytes);
         MSHookFunction((void *)SecTrustEvaluate, (void *)hooked_SecTrustEvaluate, (void **)&orig_SecTrustEvaluate);
-        MSHookFunction((void *)(_dyld_get_image_vmaddr_slide(0) + 0x43130 + 1), (void *)hooked_gpsTimeToEpoch, (void **)&orig_gpsTimeToEpoch);
+
+        uintptr_t off = resolve_gpsTimeToEpoch_offset();
+        if (off != 0) {
+            uintptr_t target = _dyld_get_image_vmaddr_slide(0) + off + 1; /* Thumb mode +1 */
+            MSHookFunction((void *)target, (void *)hooked_gpsTimeToEpoch, (void **)&orig_gpsTimeToEpoch);
+        }
     }
     reload_prefs();
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)reload_prefs, CFSTR("com.noname122021.legacygpsfix.prefschanged"), NULL, 0);
