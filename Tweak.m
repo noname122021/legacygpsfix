@@ -95,7 +95,9 @@ static void *telemetry_bridge(void *arg) {
         if (cfd < 0) continue;
         char req[8192];
         ssize_t n = read(cfd, req, sizeof(req) - 1);
-        char *split = n > 0 ? strstr(req, "\r\n\r\n") : NULL;
+        if (n <= 0) { close(cfd); continue; }
+        req[n] = '\0';
+        char *split = strstr(req, "\r\n\r\n");
         if (split) {
             pthread_mutex_lock(&s_lock);
             bool allow_wloc = s_online_wloc_enabled;
@@ -152,77 +154,6 @@ static double hooked_gpsTimeToEpoch(uint32_t week, uint32_t tow_ms) {
     return t;
 }
 
-struct DeviceBuildOffset {
-    const char *machine;
-    const char *build;
-    uintptr_t offset;
-};
-
-static const struct DeviceBuildOffset kDeviceBuildOffsets[] = {
-    /* iPad mini 1st gen */
-    { "iPad2,5", "10B146", 0x43130 }, { "iPad2,5", "10B147", 0x43130 },
-    { "iPad2,6", "10B146", 0x43130 }, { "iPad2,6", "10B147", 0x43130 },
-    { "iPad2,7", "10B146", 0x43130 }, { "iPad2,7", "10B147", 0x43130 },
-    { "iPad2,5", "10B329", 0x43130 }, { "iPad2,6", "10B329", 0x43130 }, { "iPad2,7", "10B329", 0x43130 },
-
-    /* iPhone 4S */
-    { "iPhone4,1", "10B146", 0x43130 }, { "iPhone4,1", "10B147", 0x43130 },
-    { "iPhone4,1", "10B329", 0x43130 }, { "iPhone4,1", "9B206",  0x3e280 },
-    { "iPhone4,1", "11D257", 0x48a10 }, { "iPhone4,1", "12H321", 0x4b120 },
-
-    /* iPhone 4 */
-    { "iPhone3,1", "10B146", 0x43130 }, { "iPhone3,1", "10B329", 0x43130 }, { "iPhone3,1", "11D257", 0x48a10 },
-    { "iPhone3,2", "10B146", 0x43130 }, { "iPhone3,2", "10B329", 0x43130 }, { "iPhone3,2", "11D257", 0x48a10 },
-    { "iPhone3,3", "10B146", 0x43130 }, { "iPhone3,3", "10B329", 0x43130 }, { "iPhone3,3", "11D257", 0x48a10 },
-    { "iPhone3,1", "9B206",  0x3e280 }, { "iPhone3,3", "9B206",  0x3e280 },
-
-    /* iPhone 3GS */
-    { "iPhone2,1", "10B500", 0x43130 }, { "iPhone2,1", "10B329", 0x43130 }, { "iPhone2,1", "9B206",  0x3e280 },
-
-    /* iPhone 5 */
-    { "iPhone5,1", "10B143", 0x42c38 }, { "iPhone5,1", "10B329", 0x42c38 }, { "iPhone5,1", "10B350", 0x42c38 },
-    { "iPhone5,2", "10B143", 0x42c38 }, { "iPhone5,2", "10B329", 0x42c38 }, { "iPhone5,2", "10B350", 0x42c38 },
-    { "iPhone5,1", "11D257", 0x49340 }, { "iPhone5,2", "11D257", 0x49340 },
-    { "iPhone5,1", "12H321", 0x4bd80 }, { "iPhone5,2", "12H321", 0x4bd80 },
-
-    /* iPhone 5c */
-    { "iPhone5,3", "11D257", 0x49340 }, { "iPhone5,4", "11D257", 0x49340 },
-    { "iPhone5,3", "12H321", 0x4bd80 }, { "iPhone5,4", "12H321", 0x4bd80 },
-
-    /* iPhone 5s */
-    { "iPhone6,1", "11D257", 0x51040 }, { "iPhone6,2", "11D257", 0x51040 },
-    { "iPhone6,1", "12H321", 0x54620 }, { "iPhone6,2", "12H321", 0x54620 },
-
-    /* iPad 1 */
-    { "iPad1,1", "9B206", 0x3e280 },
-
-    /* iPad 2 */
-    { "iPad2,1", "9B206", 0x3e280 }, { "iPad2,2", "9B206", 0x3e280 }, { "iPad2,3", "9B206", 0x3e280 },
-    { "iPad2,1", "10B146", 0x43130 }, { "iPad2,2", "10B146", 0x43130 }, { "iPad2,3", "10B146", 0x43130 },
-    { "iPad2,1", "10B329", 0x43130 }, { "iPad2,2", "10B329", 0x43130 }, { "iPad2,3", "10B329", 0x43130 },
-    { "iPad2,1", "11D257", 0x48a10 }, { "iPad2,2", "11D257", 0x48a10 }, { "iPad2,3", "11D257", 0x48a10 },
-    { "iPad2,1", "12H321", 0x4b120 }, { "iPad2,2", "12H321", 0x4b120 }, { "iPad2,3", "12H321", 0x4b120 },
-
-    /* iPad 3 */
-    { "iPad3,1", "9B206", 0x3e280 }, { "iPad3,2", "9B206", 0x3e280 }, { "iPad3,3", "9B206", 0x3e280 },
-    { "iPad3,1", "10B146", 0x43130 }, { "iPad3,2", "10B146", 0x43130 }, { "iPad3,3", "10B146", 0x43130 },
-    { "iPad3,1", "10B329", 0x43130 }, { "iPad3,2", "10B329", 0x43130 }, { "iPad3,3", "10B329", 0x43130 },
-    { "iPad3,1", "11D257", 0x48a10 }, { "iPad3,2", "11D257", 0x48a10 }, { "iPad3,3", "11D257", 0x48a10 },
-    { "iPad3,1", "12H321", 0x4b120 }, { "iPad3,2", "12H321", 0x4b120 }, { "iPad3,3", "12H321", 0x4b120 },
-
-    /* iPad 4 */
-    { "iPad3,4", "10B146", 0x42c38 }, { "iPad3,5", "10B146", 0x42c38 }, { "iPad3,6", "10B146", 0x42c38 },
-    { "iPad3,4", "10B329", 0x42c38 }, { "iPad3,5", "10B329", 0x42c38 }, { "iPad3,6", "10B329", 0x42c38 },
-    { "iPad3,4", "11D257", 0x49340 }, { "iPad3,5", "11D257", 0x49340 }, { "iPad3,6", "11D257", 0x49340 },
-    { "iPad3,4", "12H321", 0x4bd80 }, { "iPad3,5", "12H321", 0x4bd80 }, { "iPad3,6", "12H321", 0x4bd80 },
-
-    /* iPod touch 3, 4, 5 */
-    { "iPod3,1", "9B206",  0x3e280 },
-    { "iPod4,1", "9B206",  0x3e280 }, { "iPod4,1", "10B500", 0x43130 },
-    { "iPod5,1", "10B146", 0x43130 }, { "iPod5,1", "10B329", 0x43130 },
-    { "iPod5,1", "11D257", 0x48a10 }, { "iPod5,1", "12H321", 0x4b120 },
-};
-
 static uintptr_t resolve_gpsTimeToEpoch_offset(void) {
     char build[32] = {0};
     char machine[32] = {0};
@@ -231,13 +162,27 @@ static uintptr_t resolve_gpsTimeToEpoch_offset(void) {
     sz = sizeof(machine);
     sysctlbyname("hw.machine", machine, &sz, NULL, 0);
 
-    /* 1. Fast static matrix lookup */
+    /* 1. Fast SoC + OS build offset determination */
     if (machine[0] && build[0]) {
-        for (size_t i = 0; i < sizeof(kDeviceBuildOffsets) / sizeof(kDeviceBuildOffsets[0]); ++i) {
-            if (strcmp(kDeviceBuildOffsets[i].machine, machine) == 0 &&
-                strcmp(kDeviceBuildOffsets[i].build, build) == 0) {
-                return kDeviceBuildOffsets[i].offset;
-            }
+        bool is_a6 = (strncmp(machine, "iPhone5,", 8) == 0) ||
+                     (strncmp(machine, "iPad3,4", 7) == 0) ||
+                     (strncmp(machine, "iPad3,5", 7) == 0) ||
+                     (strncmp(machine, "iPad3,6", 7) == 0);
+
+        if (build[0] == '1' && build[1] == '0') {
+            /* iOS 6 (10B143..10B500): ARMv7 (A4/A5) = 0x43130, ARMv7s (A6/A6X) = 0x42c38 */
+            return is_a6 ? 0x42c38 : 0x43130;
+        } else if (build[0] == '1' && build[1] == '1') {
+            /* iOS 7 (11D257): ARMv7 = 0x48a10, ARMv7s = 0x49340, A7 = 0x51040 */
+            if (strncmp(machine, "iPhone6,", 8) == 0) return 0x51040;
+            return is_a6 ? 0x49340 : 0x48a10;
+        } else if (build[0] == '1' && build[1] == '2') {
+            /* iOS 8 (12H321): ARMv7 = 0x4b120, ARMv7s = 0x4bd80, A7 = 0x54620 */
+            if (strncmp(machine, "iPhone6,", 8) == 0) return 0x54620;
+            return is_a6 ? 0x4bd80 : 0x4b120;
+        } else if (build[0] == '9') {
+            /* iOS 5 (9B206): ARMv7 = 0x3e280 */
+            return 0x3e280;
         }
     }
 
@@ -328,8 +273,10 @@ static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
     double dt = ts - s_last_pt.ts;
     double dphi = (coord->latitude - s_last_pt.lat) * (M_PI / 180.0);
     double dlam = (coord->longitude - s_last_pt.lon) * (M_PI / 180.0);
-    double a = sin(dphi/2)*sin(dphi/2) + cos(s_last_pt.lat*(M_PI/180.0))*cos(coord->latitude*(M_PI/180.0))*sin(dlam/2)*sin(dlam/2);
-    double dist = 6371000.0 * 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+    double r = s_last_pt.lat * (M_PI / 180.0);
+    double dx = dlam * cos(r) * 6371000.0;
+    double dy = dphi * 6371000.0;
+    double dist = sqrt(dx * dx + dy * dy);
     double spd = dt > 0 ? (dist / dt) : 0;
 
     if (s_vel_clamp && spd > (s_max_speed_kmh / 3.6)) {
