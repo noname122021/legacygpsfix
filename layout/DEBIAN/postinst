@@ -1,0 +1,4 @@
+#!/bin/sh
+chmod 777 "/Library/Application Support/LegacyGPSFix" 2>/dev/null
+chmod 666 "/Library/Application Support/LegacyGPSFix/xtra2.bin" 2>/dev/null
+exit 0
