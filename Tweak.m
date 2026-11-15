@@ -181,8 +181,8 @@ static uintptr_t resolve_gpsTimeToEpoch_offset(void) {
             /* iOS 8 (12H321): ARMv7 = 0x4b120, ARMv7s = 0x4bd80, A7 = 0x54620 */
             if (strncmp(machine, "iPhone6,", 8) == 0) return 0x54620;
             return is_a6 ? 0x4bd80 : 0x4b120;
-        } else if (build[0] == '9') {
-            /* iOS 5 (9B206): ARMv7 = 0x3e280 */
+        } else if (strncmp(build, "9B20", 4) == 0) {
+            /* iOS 5.1.1 (9B206 / 9B208): ARMv7 = 0x3e280 */
             return 0x3e280;
         }
     }
@@ -202,7 +202,11 @@ static uintptr_t resolve_gpsTimeToEpoch_offset(void) {
                             for (int back = 0; back <= 32; back += 2) {
                                 if ((long)i - back >= 0) {
                                     uint8_t *fn = &text[i - back];
-                                    if (fn[0] == 0x41 && fn[1] == 0xec && fn[2] == 0x10 && fn[3] == 0x1b) {
+                                    if ((fn[0] == 0x41 && fn[1] == 0xec && fn[2] == 0x10 && fn[3] == 0x1b) ||
+                                        (fn[0] == 0x00 && fn[1] == 0xee && fn[2] == 0x10 && fn[3] == 0x1a)) {
+                                        return (uintptr_t)fn - slide;
+                                    }
+                                    if ((long)i - back >= 2 && fn[-2] == 0x70 && fn[-1] == 0x47) {
                                         return (uintptr_t)fn - slide;
                                     }
                                 }
@@ -239,6 +243,19 @@ static CFURLRef hooked_CFURLCreateWithBytes(CFAllocatorRef a, const UInt8 *b, CF
         return orig_CFURLCreateWithBytes(a, (const UInt8 *)"http://127.0.0.1:18088/clls/wloc", 34, e, base);
     }
     return orig_CFURLCreateWithBytes(a, b, l, e, base);
+}
+
+static CFURLRef (*orig_CFURLCreateWithString)(CFAllocatorRef, CFStringRef, CFURLRef);
+static CFURLRef hooked_CFURLCreateWithString(CFAllocatorRef a, CFStringRef u, CFURLRef b) {
+    if (u && CFStringFind(u, CFSTR("iphone-ld.apple.com"), 0).location != kCFNotFound) {
+        CFStringRef target = CFSTR("http://127.0.0.1:18080/xtra2.bin");
+        return orig_CFURLCreateWithString(a, target, b);
+    }
+    if (u && CFStringFind(u, CFSTR("gs-loc.apple.com"), 0).location != kCFNotFound) {
+        CFStringRef target = CFSTR("http://127.0.0.1:18088/clls/wloc");
+        return orig_CFURLCreateWithString(a, target, b);
+    }
+    return orig_CFURLCreateWithString(a, u, b);
 }
 
 static OSStatus (*orig_SecTrustEvaluate)(SecTrustRef, SecTrustResultType *);
@@ -364,6 +381,7 @@ __attribute__((constructor)) static void init(void) {
         pthread_detach(t1); pthread_detach(t2);
 
         MSHookFunction((void *)CFURLCreateWithBytes, (void *)hooked_CFURLCreateWithBytes, (void **)&orig_CFURLCreateWithBytes);
+        MSHookFunction((void *)CFURLCreateWithString, (void *)hooked_CFURLCreateWithString, (void **)&orig_CFURLCreateWithString);
         MSHookFunction((void *)SecTrustEvaluate, (void *)hooked_SecTrustEvaluate, (void **)&orig_SecTrustEvaluate);
 
         uintptr_t off = resolve_gpsTimeToEpoch_offset();

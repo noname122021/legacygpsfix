@@ -1,6 +1,6 @@
 # LegacyGPSFix
 
-A modern GPS restoration, rollover fix, and navigation enhancement tweak for legacy iOS devices (**iOS 6.0 – 6.1.6**).
+A modern GPS restoration, rollover fix, and navigation enhancement tweak for legacy iOS devices (**iOS 5.0 – 6.1.6**).
 
 ---
 
@@ -25,9 +25,9 @@ A modern GPS restoration, rollover fix, and navigation enhancement tweak for leg
 
 ## Compatibility
 
-- **iOS Versions:** iOS 6.0 – 6.1.6
+- **iOS Versions:** iOS 5.0 – 6.1.6
 - **Architecture:** ARMv7 (32-bit)
-- **Devices:** iPhone 3GS, iPhone 4, iPhone 4S, iPhone 5, iPad 2, iPad 3, iPad 4, iPad mini 1, iPod touch 4th/5th gen.
+- **Devices:** iPhone 3GS, iPhone 4, iPhone 4S, iPhone 5, iPad 1, iPad 2, iPad 3, iPad 4, iPad mini 1, iPod touch 4th/5th gen.
 
 ---
 
