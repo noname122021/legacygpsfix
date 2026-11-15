@@ -38,3 +38,9 @@ Add the official Cydia repository:
 https://noname122021.github.io/cydia-repo/
 ```
 Search for **LegacyGPSFix** in Cydia and install. Settings are available under **Settings $\to$ LegacyGPSFix**.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
