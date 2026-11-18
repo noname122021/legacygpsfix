@@ -42,7 +42,7 @@ static bool s_has_prev = false;
 static void safe_write(int fd, const void *b, size_t n) {
     const char *p = b;
     while (n > 0) {
-        ssize_t w = send(fd, p, n, SO_NOSIGPIPE);
+        ssize_t w = send(fd, p, n, 0);
         if (w <= 0) break;
         p += w; n -= w;
     }
@@ -60,6 +60,7 @@ static void *ephemeris_server(void *arg) {
     while (1) {
         int cfd = accept(sfd, NULL, NULL);
         if (cfd < 0) continue;
+        int sopt = 1; setsockopt(cfd, SOL_SOCKET, SO_NOSIGPIPE, &sopt, sizeof(sopt));
         char req[512];
         if (read(cfd, req, sizeof(req)) > 0) {
             FILE *f = fopen(EPHEMERIS_PATH, "rb");
@@ -94,6 +95,7 @@ static void *telemetry_bridge(void *arg) {
     while (1) {
         int cfd = accept(sfd, NULL, NULL);
         if (cfd < 0) continue;
+        int sopt = 1; setsockopt(cfd, SOL_SOCKET, SO_NOSIGPIPE, &sopt, sizeof(sopt));
         char req[8192];
         ssize_t n = read(cfd, req, sizeof(req) - 1);
         if (n <= 0) { close(cfd); continue; }
@@ -101,11 +103,12 @@ static void *telemetry_bridge(void *arg) {
         char *split = strstr(req, "\r\n\r\n");
         if (split) {
             pthread_mutex_lock(&s_lock);
+            bool fake = s_fake_gps_enabled;
             bool allow_wloc = s_online_wloc_enabled;
             pthread_mutex_unlock(&s_lock);
 
-            if (!allow_wloc) {
-                /* Privacy mode: drop Wi-Fi scans, respond with 403 Forbidden */
+            if (fake || !allow_wloc) {
+                /* Privacy mode or Fake GPS: drop Wi-Fi scans, respond with 403 Forbidden */
                 safe_write(cfd, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n", 43);
                 close(cfd);
                 continue;
@@ -265,7 +268,7 @@ static OSStatus hooked_SecTrustEvaluate(SecTrustRef t, SecTrustResultType *r) {
     return 0;
 }
 
-static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
+__attribute__((unused)) static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
     if (!coord) return;
     pthread_mutex_lock(&s_lock);
     if (s_fake_gps_enabled) {
@@ -274,8 +277,10 @@ static void apply_nav_pipeline(CLLocationCoordinate2D *coord, double ts) {
         pthread_mutex_unlock(&s_lock);
         return;
     }
-    pthread_mutex_unlock(&s_lock);
-    if (!CLLocationCoordinate2DIsValid(*coord)) return;
+    if (!CLLocationCoordinate2DIsValid(*coord)) {
+        pthread_mutex_unlock(&s_lock);
+        return;
+    }
     if (fabs(s_off_east) >= 0.001 || fabs(s_off_north) >= 0.001) {
         double r = coord->latitude * (M_PI / 180.0);
         double m_lat = 111132.95 - 559.82 * cos(2.0 * r);
@@ -316,7 +321,8 @@ static void reload_prefs(void) {
     pthread_mutex_lock(&s_lock);
     id fakeVal = p[@"fake_gps_enabled"];
     s_fake_gps_enabled = (fakeVal != nil) ? [fakeVal boolValue] : false;
-    s_online_wloc_enabled = [p[@"online_wloc_enabled"] boolValue];
+    id wlocVal = p[@"online_wloc_enabled"];
+    s_online_wloc_enabled = (wlocVal != nil) ? [wlocVal boolValue] : false;
     /* Default to Apple HQ Cupertino if not explicitly set */
     s_fake_lat = p[@"fake_lat"] ? [p[@"fake_lat"] doubleValue] : 37.33182;
     s_fake_lon = p[@"fake_lon"] ? [p[@"fake_lon"] doubleValue] : -122.03118;
@@ -329,21 +335,110 @@ static void reload_prefs(void) {
     pthread_mutex_unlock(&s_lock);
 }
 
-static CLLocationCoordinate2D (*orig_coord)(id, SEL);
-static CLLocationCoordinate2D hooked_coord(id self, SEL _cmd) {
-    CLLocationCoordinate2D c = orig_coord(self, _cmd);
-    NSDate *d = ((NSDate *(*)(id, SEL))objc_msgSend)(self, @selector(timestamp));
-    apply_nav_pipeline(&c, d ? [d timeIntervalSince1970] : 0.0);
-    return c;
-}
+@interface LGFakeGPSTimer : NSObject
+@property (nonatomic, weak) CLLocationManager *manager;
+@property (nonatomic, strong) NSTimer *timer;
+- (void)fireTick:(NSTimer *)t;
+@end
 
-static CLLocationAccuracy (*orig_hacc)(id, SEL);
-static CLLocationAccuracy hooked_hacc(id self, SEL _cmd) {
+@implementation LGFakeGPSTimer
+- (void)fireTick:(NSTimer *)t {
+    pthread_mutex_lock(&s_lock);
+    bool fake = s_fake_gps_enabled;
+    double lat = s_fake_lat;
+    double lon = s_fake_lon;
+    pthread_mutex_unlock(&s_lock);
+
+    if (!fake || !self.manager) {
+        [t invalidate];
+        return;
+    }
+
+    id delegate = self.manager.delegate;
+    if (!delegate) return;
+
+    CLLocation *loc = [[CLLocation alloc] initWithCoordinate:CLLocationCoordinate2DMake(lat, lon)
+                                                    altitude:10.0
+                                          horizontalAccuracy:5.0
+                                            verticalAccuracy:5.0
+                                                      course:0.0
+                                                       speed:0.0
+                                                   timestamp:[NSDate date]];
+
+    if ([delegate respondsToSelector:@selector(locationManager:didUpdateLocations:)]) {
+        [delegate locationManager:self.manager didUpdateLocations:@[loc]];
+    } else if ([delegate respondsToSelector:@selector(locationManager:didUpdateToLocation:fromLocation:)]) {
+        [delegate locationManager:self.manager didUpdateToLocation:loc fromLocation:loc];
+    }
+}
+- (void)dealloc {
+    [self.timer invalidate];
+    self.timer = nil;
+}
+@end
+
+static const char *kLGFakeTimerKey = "LGFakeTimerKey";
+
+static void (*orig_startUpdatingLocation)(id, SEL);
+static void hooked_startUpdatingLocation(id self, SEL _cmd) {
     pthread_mutex_lock(&s_lock);
     bool fake = s_fake_gps_enabled;
     pthread_mutex_unlock(&s_lock);
-    if (fake) return 5.0;
-    return orig_hacc ? orig_hacc(self, _cmd) : -1.0;
+
+    if (!fake) {
+        orig_startUpdatingLocation(self, _cmd);
+        return;
+    }
+
+    LGFakeGPSTimer *existing = objc_getAssociatedObject(self, kLGFakeTimerKey);
+    if (existing) return;
+
+    LGFakeGPSTimer *ft = [[LGFakeGPSTimer alloc] init];
+    ft.manager = self;
+    ft.timer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                target:ft
+                                              selector:@selector(fireTick:)
+                                              userInfo:nil
+                                               repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:ft.timer forMode:NSRunLoopCommonModes];
+    objc_setAssociatedObject(self, kLGFakeTimerKey, ft, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(400 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+        LGFakeGPSTimer *cur = objc_getAssociatedObject(self, kLGFakeTimerKey);
+        if (cur) {
+            [cur fireTick:nil];
+        }
+    });
+}
+
+static void (*orig_stopUpdatingLocation)(id, SEL);
+static void hooked_stopUpdatingLocation(id self, SEL _cmd) {
+    LGFakeGPSTimer *ft = objc_getAssociatedObject(self, kLGFakeTimerKey);
+    if (ft) {
+        [ft.timer invalidate];
+        ft.timer = nil;
+        objc_setAssociatedObject(self, kLGFakeTimerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    orig_stopUpdatingLocation(self, _cmd);
+}
+
+static id (*orig_clm_location)(id, SEL);
+static id hooked_clm_location(id self, SEL _cmd) {
+    pthread_mutex_lock(&s_lock);
+    bool fake = s_fake_gps_enabled;
+    double lat = s_fake_lat;
+    double lon = s_fake_lon;
+    pthread_mutex_unlock(&s_lock);
+    if (fake) {
+        return [[CLLocation alloc] initWithCoordinate:CLLocationCoordinate2DMake(lat, lon)
+                                             altitude:10.0
+                                   horizontalAccuracy:5.0
+                                     verticalAccuracy:5.0
+                                               course:0.0
+                                                speed:0.0
+                                            timestamp:[NSDate date]];
+    }
+    return orig_clm_location ? orig_clm_location(self, _cmd) : nil;
 }
 
 static id (*orig_pl_location)(id, SEL);
@@ -365,14 +460,8 @@ static id hooked_pl_location(id self, SEL _cmd) {
     return orig_pl_location ? orig_pl_location(self, _cmd) : nil;
 }
 
-static id (*orig_initCoord)(id, SEL, CLLocationDegrees, CLLocationDegrees);
-static id hooked_initCoord(id self, SEL _cmd, CLLocationDegrees lat, CLLocationDegrees lon) {
-    CLLocationCoordinate2D c = CLLocationCoordinate2DMake(lat, lon);
-    apply_nav_pipeline(&c, 0.0);
-    return orig_initCoord(self, _cmd, c.latitude, c.longitude);
-}
-
 __attribute__((constructor)) static void init(void) {
+    signal(SIGPIPE, SIG_IGN);
     const char *p = getprogname();
     if (p && strcmp(p, "locationd") == 0) {
         pthread_t t1, t2;
@@ -393,11 +482,11 @@ __attribute__((constructor)) static void init(void) {
     reload_prefs();
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)reload_prefs, CFSTR("com.noname122021.legacygpsfix.prefschanged"), NULL, 0);
 
-    Class cls = objc_getClass("CLLocation");
-    if (cls) {
-        MSHookMessageEx(cls, @selector(coordinate), (IMP)hooked_coord, (IMP *)&orig_coord);
-        MSHookMessageEx(cls, @selector(horizontalAccuracy), (IMP)hooked_hacc, (IMP *)&orig_hacc);
-        MSHookMessageEx(cls, @selector(initWithLatitude:longitude:), (IMP)hooked_initCoord, (IMP *)&orig_initCoord);
+    Class clmCls = objc_getClass("CLLocationManager");
+    if (clmCls) {
+        MSHookMessageEx(clmCls, @selector(startUpdatingLocation), (IMP)hooked_startUpdatingLocation, (IMP *)&orig_startUpdatingLocation);
+        MSHookMessageEx(clmCls, @selector(stopUpdatingLocation), (IMP)hooked_stopUpdatingLocation, (IMP *)&orig_stopUpdatingLocation);
+        MSHookMessageEx(clmCls, @selector(location), (IMP)hooked_clm_location, (IMP *)&orig_clm_location);
     }
 
     if (!p || strcmp(p, "locationd") != 0) {
